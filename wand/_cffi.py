@@ -7,6 +7,8 @@ import re
 import sys
 import subprocess
 
+__all__ = 'get_libraries'
+
 
 ffi = cffi.FFI()
 library_wand = None
@@ -113,12 +115,10 @@ class Preprocessor(object):
             try:
                 wand_library = ffi.dlopen(wand_library_name + suffix)
                 core_library = ffi.dlopen(core_library_name + suffix)
+                return wand_library, core_library
             except OSError:
                 pass
-        if not wand_library or not core_library:
-            raise IOError('Unable to locate ImageMagick libraries.')
-        return wand_library, core_library
-
+        raise IOError('Unable to locate ImageMagick libraries.')
 
     def remove_expanded_inline(self, buffer):
         # This sucks.
@@ -215,9 +215,9 @@ class WindowsPreprocessor(Preprocessor):
         self.lexical_scan(stdout)
 
 
-def get_library(header_file=HEADER_FILE,
-                wand_library_name=None,
-                core_library_name=None):
+def get_libraries(header_file=HEADER_FILE,
+                  wand_library_name=None,
+                  core_library_name=None):
     global ffi
     global library_wand
     global library_core
@@ -239,11 +239,11 @@ if __name__ == '__main__':
         print('Enforcing C pre-processor for ' + repr(PLATFORM))
         cpp = Preprocessor.by_system(PLATFORM)
         cpp.run()
-    C, wand, core = get_library()
+    C, wand, core = get_libraries()
     release_date = core.GetMagickReleaseDate()
     size_t = C.new('size_t *')
     version = core.GetMagickVersion(size_t)
     print(C.string(version).decode())
     print(hex(size_t[0]))
     end = time.time()
-    print('Completed in {:.2f} seconds '.format(end - start))
+    print('Completed in {0:.2f} seconds '.format(end - start))
