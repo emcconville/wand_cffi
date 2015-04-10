@@ -1,14 +1,14 @@
+import cffi
 import csv
+import itertools
+import os
 import platform
 import re
-import os
 import sys
-from subprocess import Popen, PIPE
-
-from cffi import FFI
+import subprocess
 
 
-ffi = FFI()
+ffi = cffi.FFI()
 library_wand = None
 library_core = None
 HEADER_FILE = os.path.join(os.path.dirname(__file__), 'wand-py.h')
@@ -44,9 +44,9 @@ class Preprocessor(object):
         csv.register_dialect('preprocessor_line', delimiter=' ', quotechar='"')
 
     def call_system(self, commands, stdin=None):
-        pid = Popen(commands,
-                    stdin=PIPE,
-                    stdout=PIPE)
+        pid = subprocess.Popen(commands,
+                               stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE)
         stdout, stderr = pid.communicate(stdin)
         return pid.returncode, stdout, stderr
 
@@ -97,6 +97,29 @@ class Preprocessor(object):
 
         c_definitions.close()
 
+    def load_library(self,
+                     wand_library_name=None,
+                     core_library_name=None):
+        global ffi
+        if wand_library_name is None:
+            wand_library_name = self.get_wand_library_name()
+        if core_library_name is None:
+            core_library_name = self.get_core_library_name()
+        versions = ('', '-Q16', '-Q8', '-6.Q16')
+        options = ('', 'HDRI')
+        combinations = itertools.product(versions, options)
+        wand_library = core_library = None
+        for suffix in (version + option for version, option in combinations):
+            try:
+                wand_library = ffi.dlopen(wand_library_name + suffix)
+                core_library = ffi.dlopen(core_library_name + suffix)
+            except OSError:
+                pass
+        if not wand_library or not core_library:
+            raise IOError('Unable to locate ImageMagick libraries.')
+        return wand_library, core_library
+
+
     def remove_expanded_inline(self, buffer):
         # This sucks.
         # We need to remove expanded static inline,
@@ -144,11 +167,11 @@ class DarwinPreprocessor(Preprocessor):
 
     @staticmethod
     def get_wand_library_name():
-        return 'libMagickWand-6.Q16'
+        return 'libMagickWand'
 
     @staticmethod
     def get_core_library_name():
-        return 'libMagickCore-6.Q16'
+        return 'libMagickCore'
 
 
 class WindowsPreprocessor(Preprocessor):
@@ -192,18 +215,20 @@ class WindowsPreprocessor(Preprocessor):
         self.lexical_scan(stdout)
 
 
-def get_library():
+def get_library(header_file=HEADER_FILE,
+                wand_library_name=None,
+                core_library_name=None):
     global ffi
     global library_wand
     global library_core
     if library_wand:
         return ffi, library_wand, library_core
     cpp = Preprocessor.by_system(PLATFORM)
-    if not os.path.isfile(HEADER_FILE):
+    if not os.path.isfile(header_file):
         cpp.run()
-    ffi.cdef(open(HEADER_FILE, 'r').read(), override=True)
-    library_wand = ffi.dlopen(cpp.get_wand_library_name())
-    library_core = ffi.dlopen(cpp.get_core_library_name())
+    ffi.cdef(open(header_file, 'r').read(), override=True)
+    library_wand, library_core = cpp.load_library(wand_library_name,
+                                                  core_library_name)
     return ffi, library_wand, library_core
 
 
@@ -211,14 +236,14 @@ if __name__ == '__main__':
     import time
     start = time.time()
     if '--cpp' in sys.argv:
-        print('--cpp')
+        print('Enforcing C pre-processor for ' + repr(PLATFORM))
         cpp = Preprocessor.by_system(PLATFORM)
         cpp.run()
     C, wand, core = get_library()
     release_date = core.GetMagickReleaseDate()
     size_t = C.new('size_t *')
     version = core.GetMagickVersion(size_t)
-    print(C.string(version))
+    print(C.string(version).decode())
     print(hex(size_t[0]))
     end = time.time()
-    print(str(end - start) + 's')
+    print('Completed in {:.2f} seconds '.format(end - start))
