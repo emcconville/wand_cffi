@@ -35,24 +35,35 @@ def test_create_canvas():
     wand.MagickWandGenesis()
 
     image = wand.NewMagickWand()
+    assert image != c.NULL
     color = wand.NewPixelWand()
-    assert image
-    assert color
+    assert color != c.NULL
     if not wand.PixelSetColor(color, b'orange'):
         raise Exception('Unable to site pixel color')
-    if not wand.MagickSetSize(image, 8, 8):
-        raise Exception('Unable to site size')
-    if not wand.MagickSetBackgroundColor(image, color):
-        raise Exception('Unable to set image color')
+    if not wand.MagickNewImage(image, 8, 8, color):
+        raise Exception('Unable to create image')
 
     iterator = wand.NewPixelIterator(image)
-    width = c.cast('size_t', 0)
-    pixels = wand.PixelGetNextIteratorRow(iterator, c.addressof(width))
-    #assert width[0] == 8
-    #assert pixels[0] == pixels[7]
 
-    #iterator = wand.DestroyPixelIterator(iterator)
+    assert iterator != c.NULL
+    width = c.new('size_t *', 0)
 
-    #color = wand.DestroyPixelWand(color)
-    #image = wand.DestroyMagickWand(image)
-    #wand.MagickWandTerminus()
+    pixels = wand.PixelGetNextIteratorRow(iterator, width)
+
+    assert width[0] == 8
+
+    original = wand.PixelGetColorAsString(color)
+    first= wand.PixelGetColorAsString(pixels[0])
+    last = wand.PixelGetColorAsString(pixels[7])
+
+    assert c.string(original) == c.string(first) == c.string(last)
+
+    iterator = wand.DestroyPixelIterator(iterator)
+
+    color = wand.DestroyPixelWand(color)
+    image = wand.DestroyMagickWand(image)
+    wand.MagickWandTerminus()
+
+
+if __name__ == '__main__':
+    test_create_canvas()
